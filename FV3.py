@@ -5,16 +5,18 @@ import os
 import scipy.optimize as opt 
 import numpy as np
 
-#Take in global background content from csv files - fe & gas
+#Take in global background content from csv files - fe & strategy
 with open(os.path.join('fe.csv'), 'r') as f:
         FE_data = f.readlines()
+        
+#take in the strategy for each of the 3 companies for 2016 & 2017.
 with open(os.path.join('strategy.csv'), 'r') as f:
         Strategy_data = f.readlines()
 
 for i in range(len(FE_data)):
-    FE_data[i] = FE_data[i].replace('\n','').split(',')    
+    FE_data[i] = FE_data[i].replace('\n','').replace('\r','').split(',')
 for i in range(len(Strategy_data)):
-    Strategy_data[i] = Strategy_data[i].replace('\n','').split(',')
+    Strategy_data[i] = Strategy_data[i].replace('\n','').replace('\r','').split(',')
 
 #book now contains the entire excel workbook      
 book = pyexcel.get_book(file_name="CarDetails.xlsx")
@@ -64,10 +66,55 @@ prices = a
 del a,p,price   
 
 
-#take in the strategy for each of the 3 companies for 2016 & 2017.
 #for each year 2016 & 2017
 
-#for each book's that year
+strategy_headings = np.array(Strategy_data)[0]
+strategy = np.delete(np.array(Strategy_data),0,0)
+for i in strategy:
+    year = int(i[0])
+    Stgy = {'Ford':i[1].split('&'), 'GM': i[2].split('&'),'Toyota':i[3].split('&')}    
+
+    print year
+    print Stgy
+    
+    #for each OEM  
+    for key,value in book.sheets.items():
+        if key=='Ford':
+            oem = 0
+        elif key=='GM':
+            oem = 1
+        else:
+            oem = 2
+        
+        #print '\n** Im here for '+str(year)
+        #value.delete_rows([0])
+        count = -1
+        #print '\n** Im here for '+str(year)+'with count '+str(count)
+        for row in value:
+            count +=1;
+            #print count
+            #for each of the options that satisfy its strategy
+            if (int(row[6]) == int(year)) and (row[4] in Stgy[key]):
+                #print int(row[6]),int(year),row[4]
+                prices_lastyear = prices[(year-1)%startYear]
+                prices_lastyear_updated = prices_lastyear
+                #print 'OEM' + str(oem)
+                #print 'count/4' + str(count/4)
+                #print 'count%4' + str(count%4)
+                prices_lastyear_updated[oem,(count%12)/4,count%4] = float(row[7])
+                #print 'done', key, row[4], int(i[0]), row[7], count
+        
+        print '\n**End of sheet : ' + key
+    print '\n**End of Year : ' + str(year)
+
+            
+            
+            
+            
+        
+    
+
+
     #for each of the options that satisfy its strategy 
         #run the demand function with this option & last years pi, & get the value of qi
 
