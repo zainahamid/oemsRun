@@ -175,6 +175,7 @@ for i in strategy:
         for rows in allTargets[oem]:
              print 'OEM : '+ str(key)+' Vehicle : '+str(rows[3])+' TechChoice : '+str(rows[4])
              print str(rows[11])+' vs. '+str(target[countTarget][11])
+             countTarget+=1
             
                 
        
