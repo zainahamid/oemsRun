@@ -113,7 +113,6 @@ for st in strategy:
         else:
             oem = 2
         
-        #value.delete_rows([0])
         target = []
         count = -1
         for row in value:
@@ -124,8 +123,7 @@ for st in strategy:
                     prices_updated[oem,(count%12)/4,count%4] = float(row[8])
                 else:
                     prices_updated[oem,(count%12)/4,count%4] = float("inf")
-                #print '****'                
-                #print 'done', key, row[4], int(i[0]), row[7], count
+                
                 
         #running the demand simulation for all the updated prices within my OEM, making no changes to prices of other OEMs                
         q = demand(prices_updated)
@@ -140,11 +138,8 @@ for st in strategy:
                     row.append(q[oem,(count%12)/4,count%4])
                     target.append(row)
         
-        #print '\n\n*&*&*&*&'
-        #print target
         
         allTargets.append(target)
-        #print '\n**End of sheet : ' + key
         
         #run the optimization algorithm on my 'target' rows
         #using qis as upper bound
@@ -192,8 +187,7 @@ for st in strategy:
                     count +=1;
                     #for each of the options that satisfy its strategy
                     if (int(row[6]) == int(year)):
-                        if row[4] in Stgy[key]:
-                            
+                        if row[4] in Stgy[key]:                            
                             if ((target[countMatched][11] - res['x'][countMatched])*(100/target[countMatched][11]) > deltaQtyPercent):
                                 checker = False #to ensure the iterations are run again
                                 countMatched +=1
@@ -201,6 +195,7 @@ for st in strategy:
                        
                 newTarget = []       
                 if checker == False:
+                    print'%%%something'
                     #call the demand model 
                     q = demand(prices_updated)
                     
@@ -254,13 +249,13 @@ for st in strategy:
                 target.append(row)
                 
         #compare with the each of allTargets[oem]'s values
-        print '\n\n##############################################'
-        print str(key)+' '+str(year)+' - Expected Demand vs Actual Demand'
-        print '##############################################'
+        print '\n\n#####################'
+        print str(key)+' '+str(year)+' - Profits'
+        print '#####################'
         countTarget = 0
         for rows in allTargets[oem]:
             print '-----------------------'
             print 'Vehicle: '+str(rows[3])+'; TechChoice: '+str(rows[4])
-            print str(rows[11])+' vs. '+str(target[countTarget][11])
+            #print str(rows[11])+' vs. '+str(target[countTarget][11])
             print 'Profit: ' + str((rows[8]-rows[7])*target[countTarget][11]) #+' OR '+ str((target[countTarget][8]-target[countTarget][7])*target[countTarget][11])
             countTarget+=1
