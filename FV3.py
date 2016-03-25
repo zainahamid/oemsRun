@@ -22,6 +22,8 @@ for i in range(len(Strategy_data)):
 book = pyexcel.get_book(file_name="CarDetails.xlsx")
 startYear = 2015
 n=100000
+iterations = 10
+delta = 5
 totalPrefs = np.zeros((n,3,3,4))
 
 def createPrefs():
@@ -57,11 +59,16 @@ for key,value in book.sheets.items():
         else:
             choices.append(row[4])
 
-#create a 3x3x4 size price matrix having the prices of all the OEMs 
+#create a 3x3x3x4 size 'prices'/'a' matrix having the prices of all the OEMs for all the years
+#where first dimension is the year = 3 options
+#second dimension is the OEM = 3 options
+#third dimension is the Brand within the OEM  = 3 options
+#fourth dimension is each tech choice = 4 options
 p = np.array(price)
 a = np.zeros((3,3,3,4))
 count = 0;
 for prices in p:
+    #each prices contains 36 options for each year. (12 per OEM)
     a[count] = prices.reshape((3,3,4))
     count = count + 1
  
@@ -69,10 +76,16 @@ prices = a
 del a,p,price   
 
 #for each year 2016 & 2017
+#storing the header row of the strategy data csv
 strategy_headings = np.array(Strategy_data)[0]
+
+#converting the strategy data to an np.array format and deleting the header row
 strategy = np.delete(np.array(Strategy_data),0,0)
+
+#for each year that the strategies need to be worked out for
 for i in strategy:
     year = int(i[0])
+    #extracting the given stratgey for the 'year' for the respective OEM
     Stgy = {'Ford':i[1].split('&'), 'GM': i[2].split('&'),'Toyota':i[3].split('&')}    
   
     allTargets = []
