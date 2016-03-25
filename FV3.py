@@ -104,19 +104,32 @@ for i in strategy:
         for row in value:
             count +=1;
             #for each of the options that satisfy its strategy
-            if (int(row[6]) == int(year)) and (row[4] in Stgy[key]):
-                prices_lastyear = prices[(year-1)%startYear]
-                prices_updated = prices_lastyear
-                prices_updated[oem,(count%12)/4,count%4] = float(row[8])
+            prices_lastyear = prices[(year-1)%startYear]
+            prices_updated = prices_lastyear
+            if (int(row[6]) == int(year)):
+                if row[4] in Stgy[key]:
+                    prices_updated[oem,(count%12)/4,count%4] = float(row[8])
+                else:
+                    prices_updated[oem,(count%12)/4,count%4] = float("inf")
                 #print '****'                
                 #print 'done', key, row[4], int(i[0]), row[7], count
                 
-                q = demand(prices_updated)    
-                row.append(q[oem,(count%12)/4,count%4])
-                target.append(row)
+        #running the demand simulation for all the updated prices within my OEM, making no changes to prices of other OEMs                
+        q = demand(prices_updated)
+        
+        #extracting the demand quantities of matches tech choices and adding them to "target" for the optimization        
+        count = -1
+        for row in value:
+            count +=1;
+            #for each of the options that satisfy its strategy
+            if (int(row[6]) == int(year)):
+                if row[4] in Stgy[key]:
+                    row.append(q[oem,(count%12)/4,count%4])
+                    target.append(row)
         
         #print '\n\n*&*&*&*&'
         #print target
+        
         allTargets.append(target)
         #print '\n**End of sheet : ' + key
         
@@ -153,6 +166,15 @@ for i in strategy:
         
         #maximise
         res = opt.linprog(C, A_ub=A, b_ub=B, bounds = bnds, options={"disp": True})
+
+        #Check the quantities 'x' that have been produced
+
+        #Compare against each of the quantities in 'target'
+        #If the difference is less than 10%
+            #dont do anything
+        #if more
+            #set a flag as 1
+            #update the prices  'prices_updated' and go back to running the demand model      
         
     print '\n**End of Year : ' + str(year)
     print ' ^%^%^%^%^%^%^%^%^%^%^%'
