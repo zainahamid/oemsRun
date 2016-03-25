@@ -23,7 +23,8 @@ book = pyexcel.get_book(file_name="CarDetails.xlsx")
 startYear = 2015
 n=100000
 iterations = 10
-delta = 5
+deltaPricePercent = 5
+deltaQtyPercent = 10
 totalPrefs = np.zeros((n,3,3,4))
 
 def createPrefs():
@@ -83,14 +84,28 @@ strategy_headings = np.array(Strategy_data)[0]
 strategy = np.delete(np.array(Strategy_data),0,0)
 
 #for each year that the strategies need to be worked out for
-for i in strategy:
-    year = int(i[0])
+for st in strategy:
+    year = int(st[0])
+    prices_lastyear = np.copy(prices[(year-1)%startYear])
+    
+    # if any prices of last year are infinity, set them to prices of 'startyear'  
+    if float("inf") in prices_lastyear:
+        prices_lastyear = prices_lastyear.flatten()
+        for i in range (prices_lastyear.size):
+            if prices_lastyear[i] == float("inf"):
+                prices_lastyear[i] = (prices[0].flatten())[i]
+        
+        prices_lastyear = prices_lastyear.reshape(3,3,4)
+        
+              
     #extracting the given stratgey for the 'year' for the respective OEM
-    Stgy = {'Ford':i[1].split('&'), 'GM': i[2].split('&'),'Toyota':i[3].split('&')}    
+    Stgy = {'Ford':st[1].split('&'), 'GM': st[2].split('&'),'Toyota':st[3].split('&')}    
   
     allTargets = []
     #for each OEM  
     for key,value in book.sheets.items():
+        prices_updated = np.copy(prices_lastyear)
+
         if key=='Ford':
             oem = 0
         elif key=='GM':
@@ -104,8 +119,6 @@ for i in strategy:
         for row in value:
             count +=1;
             #for each of the options that satisfy its strategy
-            prices_lastyear = prices[(year-1)%startYear]
-            prices_updated = prices_lastyear
             if (int(row[6]) == int(year)):
                 if row[4] in Stgy[key]:
                     prices_updated[oem,(count%12)/4,count%4] = float(row[8])
@@ -133,53 +146,94 @@ for i in strategy:
         allTargets.append(target)
         #print '\n**End of sheet : ' + key
         
-        
-        #now for this OEM I have all my target rows, that need to be optimized
-        
-        #run the optimization algorithm
+        #run the optimization algorithm on my 'target' rows
         #using qis as upper bound
         #constraint of sigma qi.ei >= C* sigma qi
         #maximise qi*(pi-ci)
-        bnds = ()
-        C = []
-        arow=[]
-        bnumerator = 0
-        bdenom = 0
-        for config in target:
-            #length = len(config) 
-            C.append((config[8]-config[7])*-1)
-            bound = (0,config[11])
-            bnds = bnds + (bound,)
-            arow.append(1)
-            bnumerator += config[11] * config[10]
-            bdenom +=config[10]
         
-        A = []
-        A.append(arow)
-        B = []
-        B.append(bnumerator/bdenom)
+        #TO BE REPEATED NUMBER OF ITERATIONS - 1 time UNLESS everything works
+        checker = False
+        for iter in range (iterations-1):
+            if (checker):
+                break
+            else:
+                checker = True
+                bnds = ()
+                C = []
+                arow=[]
+                bnumerator = 0
+                bdenom = 0
+                for config in target:
+                    #length = len(config) 
+                    C.append((config[8]-config[7])*-1)
+                    bound = (0,config[11])
+                    bnds = bnds + (bound,)
+                    arow.append(1)
+                    bnumerator += config[11] * config[10]
+                    bdenom +=config[10]
+                
+                A = []
+                A.append(arow)
+                B = []
+                B.append(bnumerator/bdenom)
+                
+                #C has to have all the profit values that are to MAX for each quantity
+                #A's first row has to have the coefficients of sigma qi = 1         
+                #B has the value of (sigma(qi * ei)/sigma(qi))
+                #bounds are the respective bounds of quantity obtained from the demand function
+                
+                #maximise
+                res = opt.linprog(C, A_ub=A, b_ub=B, bounds = bnds, options={"disp": False})
         
-        #C has to have all the profit values that are to MAX for each quantity
-        #A's first row has to have the coefficients of sigma qi = 1         
-        #B has the value of (sigma(qi * ei)/sigma(qi))
-        #bounds are the respective bounds of quantity obtained from the demand function
+                #Check the quantities 'x' that have been produced against each of the quantities in 'target'
+                count = -1
+                countMatched = 0
+                for row in value:
+                    count +=1;
+                    #for each of the options that satisfy its strategy
+                    if (int(row[6]) == int(year)):
+                        if row[4] in Stgy[key]:
+                            
+                            if ((target[countMatched][11] - res['x'][countMatched])*(100/target[countMatched][11]) > deltaQtyPercent):
+                                checker = False #to ensure the iterations are run again
+                                countMatched +=1
+                                prices_updated[oem,(count%12)/4,count%4] *= (1+float(deltaPricePercent)/float(100))
+                       
+                newTarget = []       
+                if checker == False:
+                    #call the demand model 
+                    q = demand(prices_updated)
+                    
+                    count = -1
+                    countMatched = -1
+                    for row in value:
+                        count +=1;
+                        #for each of the options that satisfy its strategy
+                        if (int(row[6]) == int(year)):
+                            if row[4] in Stgy[key]:
+                                countMatched +=1
+                                if ((target[countMatched][11] - res['x'][countMatched])*(100/target[countMatched][11]) > deltaQtyPercent):  
+                                    updatedTarget = target[countMatched]
+                                    updatedTarget[8] = prices_updated[oem,(count%12)/4,count%4]  
+                                    updatedTarget[11] = q[oem,(count%12)/4,count%4]
+                                    allTargets[oem][countMatched] = updatedTarget
+                                    newTarget.append(updatedTarget)
+                    
+                    #update a new set of targets on which the optimizer will run
+                    target = newTarget
+    
+        #HAVE TO UPDATE OEM's final price into prices for this year
+        prices[(year)%startYear,oem] = np.copy(prices_updated[oem])
         
-        #maximise
-        res = opt.linprog(C, A_ub=A, b_ub=B, bounds = bnds, options={"disp": True})
-
-        #Check the quantities 'x' that have been produced
-
-        #Compare against each of the quantities in 'target'
-        #If the difference is less than 10%
-            #dont do anything
-        #if more
-            #set a flag as 1
-            #update the prices  'prices_updated' and go back to running the demand model      
-        
-    print '\n**End of Year : ' + str(year)
-    print ' ^%^%^%^%^%^%^%^%^%^%^%'
-    print 'NEED TO CHECK DEMAND against Sales'
-       
+    
+    print '\n\n\n^%^%^%^%^%^%^%^%^%^%^%^%^%^%^%^%^%'
+    print '\tFor the year : ' + str(year)
+    print '^%^%^%^%^%^%^%^%^%^%^%^%^%^%^%^%^%'
+    #NEED TO CHECK DEMAND against Sales
+    #Everyone has finished executing for a year
+    #Run the demand model on the new year's prices revealed to everyone
+    q = demand(prices[year%startYear])  
+           
     for key,value in book.sheets.items():
         if key=='Ford':
             oem = 0
@@ -194,124 +248,19 @@ for i in strategy:
             count +=1;
             #for each of the options that satisfy its strategy
             if (int(row[6]) == int(year)) and (row[4] in Stgy[key]):
-                prices_thisyear = prices[year%startYear]
-                prices_updated = prices_thisyear
-                prices_updated[oem,(count%12)/4,count%4] = float(row[8])
-                #print '****'                
-                #print 'done', key, row[4], int(i[0]), row[7], count
-                
-                q = demand(prices_updated)    
+                #for the strategies that matched check the new Prices
                 row.append(q[oem,(count%12)/4,count%4])
+                row[8] = prices[year%startYear,oem,(count%12)/4,count%4]
                 target.append(row)
                 
         #compare with the each of allTargets[oem]'s values
-        print '\n\nExpected Demand vs Actual Demand for '
+        print '\n\n##############################################'
+        print str(key)+' '+str(year)+' - Expected Demand vs Actual Demand'
+        print '##############################################'
         countTarget = 0
         for rows in allTargets[oem]:
-             print 'OEM : '+ str(key)+' Vehicle : '+str(rows[3])+' TechChoice : '+str(rows[4])
-             print str(rows[11])+' vs. '+str(target[countTarget][11])
-             countTarget+=1
-            
-                
-       
-
-    #for each of the options that satisfy its strategy 
-        #run the demand function with this option & last years pi, & get the value of qi
-
-    #now we have the value of q for each of the rows that follows strategy for OEM(i)
-
-    #run the optimization algorithm
-        #using qis as upper bound
-        #constraint of sigma qi.ei >= C* sigma qi
-        #maximise qi*(pi-ci)
-
-    #now we have actual values of each qi for OEM1
-
-#after doing for all 3 OEMs
-
-#for each book's that year
-    #for each of the options that satisfy the strategy
-        #run the demand function with this option & new pis, & get the value of qi
-
-    #for each of these qi, compare with calculated qi, and give the excess or lesser values produced, and the potential loss/gain
-        
-    #for the both permutation 
-#    targetRows_both = []
-#    targetRows_gas = []
-#    targetRows_hev = []
-#    FE = []
-#    Gas = []
-#    target = []
-#    
-#    for row in value:
-##        print 'ROW[6]' 
-##        print row[6], type(row[6]), int(row[6]), type(int(row[6]))
-##        print 'year'
-##        print year, type(year), int(year), type(int(year))
-#        if int(row[6]) == int(year):
-#            targetRows_both.append(row)
-#            targetRows_gas.append(row) if row[4].lower() == "gas" else targetRows_hev.append(row)             
-##            if row[4].lower() == "gas":
-##                targetRows_gas.append(row)
-##            else:
-##                targetRows_hev.append(row) 
-#                       
-#    
-#    #appending into FE the 'year's' data                       
-#    for row in FE_data:
-#        if(str(row[0])==year):
-#            FE.append(row)
-#    
-#    #appending into Gas the 'year's' data      
-#    for row in Gas_data: 
-#        if(str(row[0])==year):
-#            Gas.append(row)
-#    
-#    target.append(targetRows_both)
-#    target.append(targetRows_gas)
-#    target.append(targetRows_hev)
-#    
-#    for config in target:
-#        length = len(config)
-#        print length       
-#        C = []
-#        A = []
-#        B = []
-#        arow_1 = []
-#        arow_2 = []
-#        #C has to have all the profit values that are to MAX
-#        #A's first row has to have the coefficients of CAFE = 1 eqn
-#        #A's second row has to have coefficients of number of cars = 1
-#        #B has to have the value for CAFE & number of cars
-#        for row in config:
-#            C.append(row[7]*-1)
-#            arow_1.append(row[9])
-#            arow_2.append(1)
-#        
-#        A.append(arow_1)
-#        A.append(arow_2)
-#        B.append(FE[1][2]*10000)
-#        B.append(10000)
-#        
-#        #maximise
-#        res = opt.linprog(C, A_ub=A, b_ub=B, options={"disp": True})
-#        
-#        if config == target[0]:
-#            tc = "Both"
-#        elif config == target[1]:
-#            tc = "GAS"
-#        else:
-#            tc = "HEV"
-#            
-#        print '\n\nFor OEM : '+key+'\nTech Choice : '+tc+'\tYear :'+year
-#        print (res)
-        
-#    results = optimize(targetRows_both, FE, Gas);
-#    print '\n\nFor OEM : '+key+'\nTech Choice : both\tYear :'+year
-#    
-#    for row in results:
-#        print'\nBrand : '+str(row[1])+'\tSegment : '+str(row[2])
-#        print 'Vehicle : '+str(row[3])+'\tVariableCost($) : '+str(row[7])
-#        print 'Footprint(feet^2) : '+str(row[8])+'\tFuel Ecobomy(MPG) : '+str(row[9])
-#        print '\nAverage Number of vehicles that should be produced : '+str(int(row[10]))
-#        print '---------------------------------------------------------------------'
+            print '-----------------------'
+            print 'Vehicle: '+str(rows[3])+'; TechChoice: '+str(rows[4])
+            print str(rows[11])+' vs. '+str(target[countTarget][11])
+            print 'Profit: ' + str((rows[8]-rows[7])*target[countTarget][11]) #+' OR '+ str((target[countTarget][8]-target[countTarget][7])*target[countTarget][11])
+            countTarget+=1
